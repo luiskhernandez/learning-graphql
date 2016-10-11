@@ -9,6 +9,10 @@ const {
 const queryType =  new GraphQLObjectType({
   name: 'RootQuery',
   fields: {
+    usersCount: {
+      type: GraphQLInt,
+      resolve: (_, args, { db }) => db.collection('users').count()
+    },
     hello: {
       type: GraphQLString,
       resolve: () => 'world'
