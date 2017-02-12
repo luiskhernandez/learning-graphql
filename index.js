@@ -5,6 +5,7 @@ const assert = require('assert');
 const express = require('express');
 const app = express();
 const graphqlHTTP = require('express-graphql');
+const cors = require('cors');
 
 const MONGO_URL = 'mongodb://localhost:27017/test';
 
@@ -15,29 +16,26 @@ const rli = readline.createInterface({
   output: process.stdout
 });
 
-MongoClient.connect(MONGO_URL, (err, db) => {
-  assert.equal(null, err);
-  console.log('Connected to MongoDB server');
+app.post('/graphql', cors(), graphqlHTTP({
+  schema: mySchema,
+  context: {
+    current_user: 1
+  }
+}));
 
-  // rli.question('Client Request: ', inputQuery => {
-  //   graphql(mySchema, inputQuery, {}, { db }).then(result => {
-  //     console.log('Server Answer: ', result.data)
-  //     db.close( () => rli.close());
-  //   })
+app.use('/graphql', cors(),graphqlHTTP({
+  schema: mySchema,
+  context: {
+    current_user: 1
+  }
+}));
 
-  //   rli.close();
-  // })
+app.use('/ui', graphqlHTTP({
+  schema: mySchema,
+  graphiql: true,
+  context: {
+    current_user: 1
+  }
+}));
 
-  app.use('/graphql', graphqlHTTP({
-    schema: mySchema,
-    context: { db }
-  }));
-  app.use('/ui', graphqlHTTP({
-    schema: mySchema,
-    context: { db },
-    graphiql: true
-  }));
-  app.listen(4000, () => console.log('Running Express.js on port 4000'))
-});
-
-
+app.listen(4000, () => console.log('Running Express.js on port 4000'))
