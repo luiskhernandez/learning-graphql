@@ -8,8 +8,21 @@ const {
   GraphQLString
 } = require('graphql');
 
+const GraphQLRelay = require('graphql-relay')
+
+var nodeDefinitions = GraphQLRelay.nodeDefinitions(function(globalId) {
+  var idInfo = GraphQLRelay.fromGlobalId(globalId)
+  if (idInfo.type == 'User') {
+    return users.find((user) => user.id == idInfo.id)
+  } else if (idInfo.type == 'cardType') {
+    return cards.find((card) => card.id == idInfo.id)
+  }
+  return null
+})
+
 const faker = require('faker')
 const prefix = ['US','DE']
+const card_states = ['icebox', 'backlog', 'in_progress', 'completed','accepted', 'deployed' ]
 
 const random = n => {
   return Math.floor(Math.random() * n) +1
@@ -17,10 +30,11 @@ const random = n => {
 
 const User = new GraphQLObjectType({
   name: 'User',
+  isTypeOf: (obj) => {
+    return obj.type == 'User'
+  },
   fields: () => ({
-    id: {
-      type: GraphQLID
-    },
+    id: GraphQLRelay.globalIdField('User'),
     name: {
       type: GraphQLString,
       description: 'owner'
@@ -30,22 +44,36 @@ const User = new GraphQLObjectType({
       description: 'Owner avatar',
     },
     cards: {
-      type: new GraphQLList(cardType),
+      // type: new GraphQLList(cardType),
+      type: GraphQLRelay.connectionDefinitions({name: 'Card', nodeType: cardType}).connectionType,
+      args: Object.assign(GraphQLRelay.connectionArgs, {
+        state:{
+          type: GraphQLString,
+          description: 'Card state'
+        }
+      }
+      ),
       resolve(parent, args) {
-        return cards.filter((card) => card.ownwer_id == parent.id)
+        let user_cards = cards.filter((card) => card.owner_id == parent.id)
+        // return cards.filter((card) => card.owner_id == parent.id)
+        if (args.hasOwnProperty('state')) {
+          user_cards = user_cards.filter((card) => card.state == args.state)
+        }
+        return GraphQLRelay.connectionFromArray(user_cards, args)
       }
     }
-  })
+  }),
+  interfaces: [nodeDefinitions.nodeInterface]
 });
 
 const cardType  = new GraphQLObjectType({
   name: 'cardType',
   description: 'card in the system',
+  isTypeOf: (obj) => {
+    return obj.type == 'Card'
+  },
   fields : {
-    id: {
-      type: GraphQLID,
-      description: 'The id of the video'
-    },
+    id: GraphQLRelay.globalIdField('cardType'),
     description: {
       type: GraphQLString,
       description: 'card description',
@@ -62,32 +90,54 @@ const cardType  = new GraphQLObjectType({
       type: GraphQLString,
       description: 'card image',
     },
+    state: {
+      type: GraphQLString,
+      description: 'card state',
+    },
     owner: {
       type: User,
       description: 'Owner',
       resolve (parent) {
-        return users.find((item) => item.id == parent.ownwer_id)
+        return users.find((item) => item.id == parent.owner_id)
       }
     }
-  }
+  },
+  interfaces: [nodeDefinitions.nodeInterface]
 })
 
 const cards =Array.from(Array(50)).map((item, i) => {
   const number = random(5)
   return {
     id: i,
-    ownwer_id: i % 2,
+    owner_id: 1,
     estimate: random(13),
     description: faker.lorem.sentences(number),
-    title: `${prefix[random(1)]}${random(3000)}`
+    title: `${prefix[random(1)]}${random(3000)}`,
+    type: 'Card',
+    state: `${card_states[random(card_states.length)]}`,
   }
 })
+
+const createCard = ({owner_id, estimate, description, title, state}) => {
+  console.log('state', state)
+  const card = {
+    owner_id: owner_id,
+    estimate: estimate,
+    description: description,
+    title: title,
+    type: 'Card',
+    state: state
+  }
+  cards.push(card)
+  return card;
+}
 const users =Array.from(Array(10)).map((item, i) => {
   const number = random(5)
   return {
     id: i,
     avatar: faker.image.avatar(),
-    name: faker.name.findName()
+    name: faker.name.findName(),
+    type: 'User'
   }
 })
 
@@ -95,6 +145,7 @@ const queryType = new GraphQLObjectType({
   name: 'RootQuery',
   description: 'The root query type',
   fields: {
+    node: nodeDefinitions.nodeField,
     usersCount: {
       type: GraphQLInt,
       resolve: (_, args, { db }) => db.collection('users').count()
@@ -160,8 +211,48 @@ const queryType = new GraphQLObjectType({
 
 const roll = () => Math.floor(6 * Math.random()) + 1;
 
+const mutationType = new GraphQLObjectType({
+  name: 'mutation',
+  description: 'Mutation root',
+  fields: {
+    createCard: {
+      type: cardType,
+      args: {
+        description: {
+          type: GraphQLString,
+          description: 'card description',
+        },
+        title: {
+          type: GraphQLString,
+          description: 'title',
+        },
+        estimate: {
+          type: GraphQLInt,
+          description: 'estimate',
+        },
+        imageUrl: {
+          type: GraphQLString,
+          description: 'card image',
+        },
+        state: {
+          type: GraphQLString,
+          description: 'card state',
+        },
+        owner_id: {
+          type: GraphQLInt,
+          description: 'Owner'
+        }
+      },
+      resolve: (_,args) => {
+        console.log('args', args)
+        return createCard(args)
+      }
+    }
+  }
+})
 const mySchema = new GraphQLSchema({
-  query: queryType
+  query: queryType,
+  mutation: mutationType
 });
 
 module.exports = mySchema;
