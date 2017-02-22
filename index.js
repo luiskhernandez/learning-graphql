@@ -1,4 +1,3 @@
-const { MongoClient } = require('mongodb');
 const { graphql } = require('graphql');
 const readline = require('readline');
 const assert = require('assert');
@@ -6,8 +5,6 @@ const express = require('express');
 const app = express();
 const graphqlHTTP = require('express-graphql');
 const cors = require('cors');
-
-const MONGO_URL = 'mongodb://localhost:27017/test';
 
 const mySchema = require('./schema/main');
 
