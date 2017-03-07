@@ -10,6 +10,10 @@ const {
 
 const GraphQLRelay = require('graphql-relay')
 
+function truncate(str, max) {
+  return str.split(" ").splice(0,max).join(" ") + '…'
+}
+
 var nodeDefinitions = GraphQLRelay.nodeDefinitions(function(globalId) {
   var idInfo = GraphQLRelay.fromGlobalId(globalId)
   if (idInfo.type == 'User') {
@@ -44,7 +48,6 @@ const User = new GraphQLObjectType({
       description: 'Owner avatar',
     },
     cards: {
-      // type: new GraphQLList(cardType),
       type: GraphQLRelay.connectionDefinitions({name: 'Card', nodeType: cardType}).connectionType,
       args: Object.assign(GraphQLRelay.connectionArgs, {
         state:{
@@ -54,9 +57,7 @@ const User = new GraphQLObjectType({
       }
       ),
       resolve(parent, args) {
-        console.log('args', args)
-        let user_cards = cards.filter((card) => card.ownwer_id == parent.id)
-        // return cards.filter((card) => card.ownwer_id == parent.id)
+        let user_cards = cards.filter((card) => card.owner_id == parent.id)
         if (args.hasOwnProperty('state')) {
           user_cards = user_cards.filter((card) => card.state == args.state)
         }
@@ -78,6 +79,15 @@ const cardType  = new GraphQLObjectType({
     description: {
       type: GraphQLString,
       description: 'card description',
+      args: {
+        limit: {
+          type: GraphQLInt,
+          defaultValue: 10
+        }
+      },
+      resolve (parent, args) {
+        return truncate(parent.description, args.limit)
+      }
     },
     title: {
       type: GraphQLString,
@@ -99,7 +109,7 @@ const cardType  = new GraphQLObjectType({
       type: User,
       description: 'Owner',
       resolve (parent) {
-        return users.find((item) => item.id == parent.ownwer_id)
+        return users.find((item) => item.id == parent.owner_id)
       }
     }
   },
@@ -110,14 +120,15 @@ const cards =Array.from(Array(50)).map((item, i) => {
   const number = random(5)
   return {
     id: i,
-    ownwer_id: i % 2,
+    owner_id: 1,
     estimate: random(13),
-    description: faker.lorem.sentences(number),
-    title: `${prefix[random(1)]}${random(3000)}`,
+    description: faker.lorem.sentences(30),
+    title: `${i}-${prefix[random(1)]}${random(3000)}`,
     type: 'Card',
     state: `${card_states[random(card_states.length)]}`,
   }
 })
+
 const users =Array.from(Array(10)).map((item, i) => {
   const number = random(5)
   return {
@@ -168,13 +179,6 @@ const queryType = new GraphQLObjectType({
       resolve: (_, args) => {
         console.log(args, cards)
         return cards.find((card) => card.id == args.id)
-      }
-    },
-    cards: {
-      type: new GraphQLList(cardType),
-      description: 'List of cards',
-      resolve: () => {
-        return cards
       }
     },
     viewer: {
