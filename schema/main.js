@@ -8,33 +8,14 @@ const {
   GraphQLString
 } = require('graphql');
 
-const GraphQLRelay = require('graphql-relay')
-
-var nodeDefinitions = GraphQLRelay.nodeDefinitions(function(globalId) {
-  var idInfo = GraphQLRelay.fromGlobalId(globalId)
-  if (idInfo.type == 'User') {
-    return users.find((user) => user.id == idInfo.id)
-  } else if (idInfo.type == 'cardType') {
-    return cards.find((card) => card.id == idInfo.id)
-  }
-  return null
-})
-
-const faker = require('faker')
-const prefix = ['US','DE']
-const card_states = ['icebox', 'backlog', 'in_progress', 'completed','accepted', 'deployed' ]
-
-const random = n => {
-  return Math.floor(Math.random() * n) +1
-}
+const { cards, roll, users } = require('./data')
 
 const User = new GraphQLObjectType({
   name: 'User',
-  isTypeOf: (obj) => {
-    return obj.type == 'User'
-  },
   fields: () => ({
-    id: GraphQLRelay.globalIdField('User'),
+    id: {
+      type: GraphQLID
+    },
     name: {
       type: GraphQLString,
       description: 'owner'
@@ -44,26 +25,23 @@ const User = new GraphQLObjectType({
       description: 'Owner avatar',
     },
     cards: {
-      // type: new GraphQLList(cardType),
-      type: GraphQLRelay.connectionDefinitions({name: 'Card', nodeType: cardType}).connectionType,
-      args: Object.assign(GraphQLRelay.connectionArgs, {
+      type: new GraphQLList(cardType),
+      args: {
         state:{
           type: GraphQLString,
           description: 'Card state'
         }
       }
-      ),
+      ,
       resolve(parent, args) {
         let user_cards = cards.filter((card) => card.owner_id == parent.id)
-        // return cards.filter((card) => card.owner_id == parent.id)
         if (args.hasOwnProperty('state')) {
           user_cards = user_cards.filter((card) => card.state == args.state)
         }
-        return GraphQLRelay.connectionFromArray(user_cards, args)
+        return user_cards
       }
     }
   }),
-  interfaces: [nodeDefinitions.nodeInterface]
 });
 
 const cardType  = new GraphQLObjectType({
@@ -73,7 +51,9 @@ const cardType  = new GraphQLObjectType({
     return obj.type == 'Card'
   },
   fields : {
-    id: GraphQLRelay.globalIdField('cardType'),
+    id:{
+      type: GraphQLID
+    } ,
     description: {
       type: GraphQLString,
       description: 'card description',
@@ -101,43 +81,6 @@ const cardType  = new GraphQLObjectType({
         return users.find((item) => item.id == parent.owner_id)
       }
     }
-  },
-  interfaces: [nodeDefinitions.nodeInterface]
-})
-
-const cards =Array.from(Array(50)).map((item, i) => {
-  const number = random(5)
-  return {
-    id: i,
-    owner_id: 1,
-    estimate: random(13),
-    description: faker.lorem.sentences(number),
-    title: `${prefix[random(1)]}${random(3000)}`,
-    type: 'Card',
-    state: `${card_states[random(card_states.length)]}`,
-  }
-})
-
-const createCard = ({owner_id, estimate, description, title, state}) => {
-  console.log('state', state)
-  const card = {
-    owner_id: owner_id,
-    estimate: estimate,
-    description: description,
-    title: title,
-    type: 'Card',
-    state: state
-  }
-  cards.push(card)
-  return card;
-}
-const users =Array.from(Array(10)).map((item, i) => {
-  const number = random(5)
-  return {
-    id: i,
-    avatar: faker.image.avatar(),
-    name: faker.name.findName(),
-    type: 'User'
   }
 })
 
@@ -145,12 +88,8 @@ const queryType = new GraphQLObjectType({
   name: 'RootQuery',
   description: 'The root query type',
   fields: {
-    node: nodeDefinitions.nodeField,
-    usersCount: {
-      type: GraphQLInt,
-      resolve: (_, args, { db }) => db.collection('users').count()
-    },
     hello: {
+      description: 'It returns the word WORLD',
       type: GraphQLString,
       resolve: () => 'world'
     },
@@ -163,11 +102,7 @@ const queryType = new GraphQLObjectType({
         }
       },
       resolve: (_, args) =>{
-        let rolls = []
-        for (let i = 0; i < args.count; i++) {
-          rolls.push(roll());
-        }
-        return rolls;
+        return Array(args.count).fill().map((_, i) => roll() );
       }
     },
     card: {
@@ -175,7 +110,7 @@ const queryType = new GraphQLObjectType({
       args: {
         id: {
           type: GraphQLID,
-          description: 'Id of the video'
+          description: 'Id of the card'
         }
       },
       resolve: (_, args) => {
@@ -184,9 +119,19 @@ const queryType = new GraphQLObjectType({
     },
     cards: {
       type: new GraphQLList(cardType),
+      args: {
+        state:{
+          type: GraphQLString,
+          description: 'Card state'
+        }
+      },
       description: 'List of cards',
-      resolve: () => {
-        return cards
+      resolve: (_, args) => {
+        if (args.hasOwnProperty('state')) {
+          return cards.filter((card) => card.state == args.state)
+        } else {
+          return cards
+        }
       }
     },
     viewer: {
@@ -209,50 +154,8 @@ const queryType = new GraphQLObjectType({
   }
 });
 
-const roll = () => Math.floor(6 * Math.random()) + 1;
-
-const mutationType = new GraphQLObjectType({
-  name: 'mutation',
-  description: 'Mutation root',
-  fields: {
-    createCard: {
-      type: cardType,
-      args: {
-        description: {
-          type: GraphQLString,
-          description: 'card description',
-        },
-        title: {
-          type: GraphQLString,
-          description: 'title',
-        },
-        estimate: {
-          type: GraphQLInt,
-          description: 'estimate',
-        },
-        imageUrl: {
-          type: GraphQLString,
-          description: 'card image',
-        },
-        state: {
-          type: GraphQLString,
-          description: 'card state',
-        },
-        owner_id: {
-          type: GraphQLInt,
-          description: 'Owner'
-        }
-      },
-      resolve: (_,args) => {
-        console.log('args', args)
-        return createCard(args)
-      }
-    }
-  }
-})
 const mySchema = new GraphQLSchema({
-  query: queryType,
-  mutation: mutationType
+  query: queryType
 });
 
 module.exports = mySchema;
